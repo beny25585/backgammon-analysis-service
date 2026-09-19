@@ -17,8 +17,11 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 from analysis.api.views import health, receive_match
+from analysis.api.results import match_results
 
 urlpatterns = [
+    path("api/v1/internal/results/", match_results, name="analysis-results"),
+    path("api/v1/internal/results/<uuid:analysis_id>/", match_results, name="analysis-result"),
     path('admin/', admin.site.urls),
     # Analysis API
     path("api/v1/health/", health, name="health"),

@@ -1,3 +1,11 @@
+def _has_exhausted_dice(decision):
+    after_state = decision.get("after_state")
+    return (
+        isinstance(after_state, dict)
+        and after_state.get("remaining") == []
+    )
+
+
 def extract_checker_decisions(game_analysis):
     events = sorted(
         game_analysis.input_events or [],
@@ -26,7 +34,7 @@ def extract_checker_decisions(game_analysis):
         )
 
         if starts_normal_turn or starts_opening_turn:
-            if current is not None:
+            if current is not None and _has_exhausted_dice(current):
                 decisions.append(current)
 
             player = (
@@ -85,7 +93,11 @@ def extract_checker_decisions(game_analysis):
             decisions.append(current)
             current = None
 
-    if current is not None and current.get("after_state") is not None:
+    # A timeout, resignation, or truncated event stream can leave a partial
+    # turn. Open Sage candidates represent a whole roll, so a partial board
+    # must not be scored against them. Completed moves awaiting confirmation
+    # are still usable; automatic endings have already been appended above.
+    if current is not None and _has_exhausted_dice(current):
         decisions.append(current)
 
     return decisions

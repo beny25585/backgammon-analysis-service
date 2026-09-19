@@ -9,6 +9,18 @@ perspective). No Game -> Open Sage board conversion happens here.
 """
 
 from bgsage import BgBotAnalyzer, roll_luck
+from bgsage.text_export import compute_move_notation
+
+
+def checker_move_notation(before, after, dice):
+    """Describe a stored legal candidate without running a new evaluation.
+
+    Both boards use the mover's native 1..24 perspective. Open Sage resolves
+    dice order, hits, bar entry and bearing off instead of guessing board deltas.
+    """
+    if len(dice) != 2 or after is None:
+        return ""
+    return compute_move_notation(before, after, dice[0], dice[1])
 
 OPEN_SAGE_ENGINE = "open_sage"
 OPEN_SAGE_PACKAGE_VERSION = "2.0.20260907"

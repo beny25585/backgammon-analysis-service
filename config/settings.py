@@ -11,9 +11,19 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# The browser never receives this service-to-service credential.
+_env_file = BASE_DIR / '.env'
+if _env_file.is_file():
+    for _line in _env_file.read_text(encoding='utf-8').splitlines():
+        if _line.strip() and not _line.lstrip().startswith('#') and '=' in _line:
+            _key, _value = _line.split('=', 1)
+            os.environ.setdefault(_key.strip(), _value.strip().strip('\"').strip("'"))
+ANALYSIS_API_TOKEN = os.environ.get('ANALYSIS_API_TOKEN', '')
 
 
 # Quick-start development settings - unsuitable for production

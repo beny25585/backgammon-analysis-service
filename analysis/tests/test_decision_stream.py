@@ -42,6 +42,50 @@ def state(
 
 
 class CheckerDecisionStreamTests(SimpleTestCase):
+    def _interrupted_double_events(self, *, remaining):
+        return [
+            event(159, "roll", state(dice=[5, 5], remaining=[5] * 4), "white"),
+            event(162, "move", state(
+                dice=[5, 5], remaining=remaining,
+                last_move=[{"from": 11, "to": 6},
+                           {"from": 5, "to": 0},
+                           {"from": 7, "to": 2}],
+            ), "white"),
+        ]
+
+    def test_partial_double_at_end_of_stream_is_not_scored(self):
+        events = self._interrupted_double_events(remaining=[5])
+        events[-1]["payload"]["clock"] = {"white": 0, "black": 32566}
+        self.assertEqual(extract_checker_decisions(game_with_events(events)), [])
+
+    def test_partial_turn_before_another_roll_is_not_scored(self):
+        events = self._interrupted_double_events(remaining=[5])
+        events.extend([
+            event(163, "roll", state(turn="black", dice=[6, 1], remaining=[6, 1]), "black"),
+            event(164, "move", state(turn="black", dice=[6, 1], remaining=[]), "black"),
+            event(165, "end_turn", state(turn="white", phase="rolling"), "black"),
+        ])
+        decisions = extract_checker_decisions(game_with_events(events))
+        self.assertEqual([d["start_sequence"] for d in decisions], [163])
+
+    def test_exhausted_dice_without_confirmation_are_scored(self):
+        events = self._interrupted_double_events(remaining=[])
+        decisions = extract_checker_decisions(game_with_events(events))
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual(decisions[0]["end_sequence"], 162)
+
+    def test_undo_to_partial_turn_at_end_is_not_scored(self):
+        events = self._interrupted_double_events(remaining=[])
+        events.append(event(163, "undo", state(dice=[5, 5], remaining=[5]), "white"))
+        self.assertEqual(extract_checker_decisions(game_with_events(events)), [])
+
+    def test_winning_move_with_unused_dice_is_scored(self):
+        events = self._interrupted_double_events(remaining=[5])
+        events[-1]["payload"]["phase"] = "game_over"
+        decisions = extract_checker_decisions(game_with_events(events))
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual(decisions[0]["end_sequence"], 162)
+
     def test_normal_roll_moves_and_end_turn(self):
         events = [
             event(
