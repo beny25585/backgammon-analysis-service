@@ -4,6 +4,38 @@
 >
 > [מצב המערכת העדכני](<../CURRENT_STATE.he.md>) · [מפתח התיעוד](<../docs/README.md>). עדכון זה מבוסס על קוד מקומי; בדיקות וספירות בגוף המסמך נשארות מתוארכות למועד ביצוען.
 
+Install dependencies and the CPU-appropriate engine before applying the schema:
+
+```sh
+.venv/bin/python -m pip install -r requirements-server.txt
+.venv/bin/python scripts/install_open_sage.py
+.venv/bin/python manage.py migrate
+```
+
+`requirements.txt` now contains only the Python runtime dependencies; it deliberately
+does not reinstall the upstream `bgsage` wheel. Fresh installations must run the
+engine installer. Existing compatible installations survive ordinary dependency
+updates. The installer is also the engine upgrade/rebuild entry point.
+
+On Linux x86-64 it checks every processor's AVX2 and FMA flags. If either is absent
+(or flags are unavailable), it builds the pinned upstream revision with baseline
+`-march=x86-64 -mtune=generic` and disables the unconditional `BGBOT_USE_AVX2`
+definition in `cpp/src/neural_net.cpp`, selecting upstream's scalar fallback.
+Use `--compatible` to explicitly select this mode on the current Ivy Bridge VPS.
+Both replacements are checked against the expected source before editing; model
+weights and the engine revision are unchanged. Scalar performance and floating-point
+rounding can differ from AVX2. The final check loads the engine and evaluates a move.
+
+The saved wheels are in `.engine-build/compatible/` or `.engine-build/upstream/`,
+ignored by Git. Build tools required on Ubuntu: `git`, `python3-venv`, `python3-dev`,
+`build-essential`, and `cmake`. Builds default to two parallel jobs.
+Do not reinstall `bgsage` directly from PyPI or the Git URL on this VPS: the
+upstream x86 build forces AVX2/FMA and crashes here with exit code 132.
+
+Upstream sources at the pinned revision:
+- [CPU build flags](https://github.com/markbgsage/bgsage/blob/d8325a491168062df1047ffd998f3a5dfb426a0c/cpp/CMakeLists_cpu.txt)
+- [AVX2/scalar implementation](https://github.com/markbgsage/bgsage/blob/d8325a491168062df1047ffd998f3a5dfb426a0c/cpp/src/neural_net.cpp)
+
 Apply the schema before starting the API and worker:
 
 ```sh

@@ -4,4 +4,6 @@ djangorestframework==3.18.1
 python-decouple==3.8
 sqlparse==0.6.0
 tzdata==2026.4
-bgsage @ git+https://github.com/markbgsage/bgsage.git@d8325a491168062df1047ffd998f3a5dfb426a0c
+# Install the engine with: python scripts/install_open_sage.py
+# Do not install the upstream wheel on CPUs without AVX2 and FMA.
+numpy>=1.24
