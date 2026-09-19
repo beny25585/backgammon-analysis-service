@@ -101,6 +101,32 @@ def assert_no_rows(testcase):
 
 
 class ReceiveMatchTests(TestCase):
+    def test_ai_opponent_is_ingested_without_a_fake_user_and_retry_is_idempotent(self):
+        payload = make_payload(source={"type": "ai"}, players={
+            "white": {"player_id": 10, "name": "Human"},
+            "black": {"player_id": None, "kind": "ai", "name": "Open Sage"},
+        })
+        client = APIClient()
+        self.assertEqual(client.post(MATCHES_URL, payload, format="json").status_code, 202)
+        self.assertEqual(client.post(MATCHES_URL, payload, format="json").status_code, 200)
+        bot = PlayerMatchAnalysis.objects.get(color="black")
+        self.assertIsNone(bot.source_player_id)
+        self.assertEqual(PlayerGameAnalysis.objects.filter(match_player_analysis=bot).count(), 2)
+
+    def test_missing_human_identity_and_ai_in_normal_match_are_rejected(self):
+        for source, black in [
+            ("private", {"player_id": None}),
+            ("private", {"player_id": None, "kind": "ai"}),
+            ("ai", {"player_id": 20}),
+            ("ai", {"player_id": 20, "kind": "ai"}),
+        ]:
+            with self.subTest(source=source, black=black):
+                payload = make_payload(source={"type": source}, players={
+                    "white": {"player_id": 10}, "black": black,
+                })
+                self.assertEqual(APIClient().post(MATCHES_URL, payload, format="json").status_code, 400)
+        assert_no_rows(self)
+
     def setUp(self):
         self.client = APIClient()
 

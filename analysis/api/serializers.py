@@ -2,7 +2,8 @@ from rest_framework import serializers
 
 
 class PlayerInputSerializer(serializers.Serializer):
-    player_id = serializers.IntegerField()
+    player_id = serializers.IntegerField(allow_null=True)
+    kind = serializers.ChoiceField(choices=("human", "ai"), required=False)
     name = serializers.CharField(required=False, allow_blank=True, max_length=150)
 
 
@@ -16,6 +17,7 @@ class SourceInputSerializer(serializers.Serializer):
         ("tournament", "Tournament"),
         ("quick", "Quick"),
         ("private", "Private"),
+        ("ai", "AI"),
     )
 
     type = serializers.ChoiceField(choices=SOURCE_TYPES)
@@ -102,6 +104,16 @@ class MatchAnalysisInputSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"players": "White and black must be different players."}
             )
+
+        ai_players = [p for p in players.values() if p.get("kind") == "ai"]
+        if attrs["source"]["type"] == "ai":
+            if len(ai_players) != 1:
+                raise serializers.ValidationError({"players": "AI matches require one AI opponent."})
+        elif ai_players:
+            raise serializers.ValidationError({"players": "AI players require an AI match."})
+        for player in players.values():
+            if (player.get("kind") == "ai") != (player["player_id"] is None):
+                raise serializers.ValidationError({"players": "Only AI opponents have no player ID."})
 
         games = attrs.get("games", [])
         game_ids = [game.get("game_id") for game in games]

@@ -18,6 +18,7 @@ class MatchAnalysis(models.Model):
         TOURNAMENT = "tournament", "Tournament"
         QUICK = "quick", "Quick"
         PRIVATE = "private", "Private"
+        AI = "ai", "AI"
 
     id = models.UUIDField(
         primary_key=True,
@@ -141,7 +142,7 @@ class PlayerMatchAnalysis(models.Model):
     )
 
     # Player PK from Backgammon Game.
-    source_player_id = models.BigIntegerField(db_index=True)
+    source_player_id = models.BigIntegerField(db_index=True, null=True, blank=True)
     color = models.CharField(max_length=5, choices=COLOR_CHOICES)
 
     # Result-screen summary + match-level statistics.

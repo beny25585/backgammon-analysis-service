@@ -50,6 +50,37 @@ class LiveBotTests(SimpleTestCase):
         with self.assertRaises(ValueError):
             choose_board(state, 'hard')
 
+    def test_cube_response_uses_offerers_perspective_and_match_score(self):
+        from unittest.mock import Mock
+        from analysis.converters.game_state import game_state_to_open_sage_board
+        state = position(color='white')
+        state.update(phase='doubling_offered', doubleOfferedBy='white',
+            cube=2, cubeOwner='white', doublingEnabled=True, crawfordGame=False, maxCube=64)
+        engine = Mock()
+        engine.cube_action.return_value = Mock(should_double=True, should_take=False)
+        with patch('analysis.api.bot._engine', engine):
+            result = choose_board(state, 'hard', {'target_points': 7, 'scores': {'white': 3, 'black': 1}}, 'cube')
+        args, kwargs = engine.cube_action.call_args
+        self.assertEqual(args[0], game_state_to_open_sage_board(state, player_on_roll='white'))
+        self.assertEqual((kwargs['away1'], kwargs['away2'], kwargs['cube_owner'], kwargs['cube_value']), (4, 6, 'player', 2))
+        self.assertFalse(result['should_take'])
+        state['crawfordGame'] = True
+        with self.assertRaises(ValueError):
+            choose_board(state, 'hard', {}, 'cube')
+
+    def test_real_upstream_match_cube_and_checker_play(self):
+        state = position(color='black')
+        state.update(phase='rolling', dice=[], remaining=[], cube=1, cubeOwner='center',
+            doublingEnabled=True, crawfordGame=False, maxCube=64)
+        match = {'target_points': 5, 'scores': {'white': 2, 'black': 1}}
+        result = choose_board(state, 'hard', match, 'cube')
+        self.assertIsInstance(result['should_take'], bool)
+        state.update(phase='moving', dice=[2, 2], remaining=[2] * 4)
+        from bgsage import possible_moves
+        from analysis.converters.game_state import game_state_to_open_sage_board
+        self.assertIn(choose_board(state, 'hard', match)['board'],
+            possible_moves(game_state_to_open_sage_board(state, player_on_roll='black'), 2, 2))
+
     @override_settings(ANALYSIS_API_TOKEN='test-only-token')
     def test_doubles_http_contract(self):
         from bgsage import possible_moves
