@@ -15,6 +15,16 @@ from analysis.services.match_processor import (
 
 
 class MatchProcessorTests(TestCase):
+    @patch('analysis.services.match_processor.OpenSageEngine', side_effect=RuntimeError('engine unavailable'))
+    def test_selected_depth_reaches_engine_and_initialization_failure_is_recorded(self, engine):
+        self.match_analysis.eval_level = '3ply'
+        self.match_analysis.save()
+        with self.assertRaises(RuntimeError):
+            process_match_analysis(match_analysis=self.match_analysis)
+        engine.assert_called_once_with(eval_level='3ply')
+        self.match_analysis.refresh_from_db()
+        self.assertEqual(self.match_analysis.status, 'failed')
+
     def setUp(self):
         self.match_analysis = MatchAnalysis.objects.create(
             source_match_id="44444444-4444-4444-4444-444444444444",

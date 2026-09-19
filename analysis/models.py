@@ -47,6 +47,7 @@ class MatchAnalysis(models.Model):
 
     engine = models.CharField(max_length=50, blank=True, default="")
     engine_version = models.CharField(max_length=100, blank=True, default="")
+    eval_level = models.CharField(max_length=10, default="1ply")
 
     # Exact immutable package received from Backgammon Game.
     input_payload = models.JSONField()

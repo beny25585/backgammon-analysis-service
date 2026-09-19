@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 class PlayerInputSerializer(serializers.Serializer):
     player_id = serializers.IntegerField()
+    name = serializers.CharField(required=False, allow_blank=True, max_length=150)
 
 
 class PlayersInputSerializer(serializers.Serializer):

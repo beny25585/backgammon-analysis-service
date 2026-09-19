@@ -1,9 +1,10 @@
-"""Read-only results for the trusted tournaments server, never the browser."""
+"""Results and reanalysis requests for the trusted tournaments server."""
 import hmac
 import os
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
@@ -28,18 +29,38 @@ def summary(match):
         "room_id": str(match.source_room_id) if match.source_room_id else None,
         "created_at": match.created_at.isoformat(),
         "engine": match.engine, "engine_version": match.engine_version,
+        "eval_level": match.eval_level,
+        "available_eval_levels": ["1ply", "2ply", "3ply"],
         "rules": match.input_payload.get("rules", {}),
         "result": match.input_payload.get("result", {}),
-        "players": [{"color": p.color, "pr": p.pr, "luck": p.luck,
+        "players": [{"color": p.color,
+                     "name": match.input_payload.get("players", {}).get(p.color, {}).get("name", ""),
+                     "pr": p.pr, "luck": p.luck,
                      "errors": p.errors, "blunders": p.blunders,
                      "equity_lost": p.equity_lost} for p in match.players.all()],
     }
 
 
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 @permission_classes([ResultsClient])
 def match_results(request, analysis_id=None):
     matches = MatchAnalysis.objects.prefetch_related("players")
+    if request.method == "POST":
+        if analysis_id is None:
+            return Response({"detail": "A match is required."}, status=400)
+        level = request.data.get("eval_level") if isinstance(request.data, dict) else None
+        if level not in ("1ply", "2ply", "3ply"):
+            return Response({"detail": "Choose 1ply, 2ply or 3ply."}, status=400)
+        match = get_object_or_404(matches, pk=analysis_id)
+        # Conditional update prevents requeueing an active job or a double click.
+        changed = MatchAnalysis.objects.filter(pk=match.pk).exclude(
+            status__in=["pending", "processing"]
+        ).update(status="pending", eval_level=level, updated_at=timezone.now(),
+                 error_message="", completed_at=None, failed_at=None)
+        if not changed:
+            return Response({"detail": "Analysis is already queued or processing."}, status=409)
+        match.refresh_from_db()
+        return Response(summary(match), status=202)
     if analysis_id is None:
         # The trusted caller supplies only rooms authorized for its session.
         if request.query_params.get("staff") != "1":

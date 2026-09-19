@@ -18,8 +18,10 @@ from django.contrib import admin
 from django.urls import path
 from analysis.api.views import health, receive_match
 from analysis.api.results import match_results
+from analysis.api.bot import bot_move
 
 urlpatterns = [
+    path("api/v1/internal/bot/move/", bot_move, name="bot-move"),
     path("api/v1/internal/results/", match_results, name="analysis-results"),
     path("api/v1/internal/results/<uuid:analysis_id>/", match_results, name="analysis-result"),
     path('admin/', admin.site.urls),

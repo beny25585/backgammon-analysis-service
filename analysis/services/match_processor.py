@@ -44,7 +44,12 @@ def process_match_analysis(*, match_analysis):
             "Match analysis is already processing."
         )
 
-    engine = OpenSageEngine()
+    claimed = MatchAnalysis.objects.filter(pk=match_analysis.pk, updated_at=match_analysis.updated_at).exclude(
+        status=MatchAnalysis.Status.PROCESSING
+    ).update(status=MatchAnalysis.Status.PROCESSING)
+    if not claimed:
+        raise MatchProcessingError("Match analysis is already processing.")
+    match_analysis.refresh_from_db()
 
     match_analysis.status = MatchAnalysis.Status.PROCESSING
     match_analysis.engine = OPEN_SAGE_ENGINE
@@ -68,6 +73,7 @@ def process_match_analysis(*, match_analysis):
     )
 
     try:
+        engine = OpenSageEngine(eval_level=match_analysis.eval_level)
         with transaction.atomic():
             games = match_analysis.games.order_by(
                 "game_number"
@@ -138,6 +144,7 @@ def process_match_analysis(*, match_analysis):
             )
 
             match_analysis.raw_response = {
+                "eval_level": match_analysis.eval_level,
                 "games": game_results,
                 "games_analyzed": len(
                     game_results

@@ -16,6 +16,33 @@ class ResultsAPITests(TestCase):
     def authorize(self):
         self.client.credentials(HTTP_AUTHORIZATION="Bearer test-results-token")
 
+    def test_names_and_depth_are_returned(self):
+        self.authorize()
+        self.match.input_payload['players'] = {'white': {'name': 'דנה'}}
+        self.match.save()
+        self.match.players.create(color='white', source_player_id=7)
+        self.match.players.create(color='black', source_player_id=8)
+        data = self.client.get(f'/api/v1/internal/results/{self.match.id}/').json()
+        self.assertEqual({p['color']: p['name'] for p in data['players']}, {'white': 'דנה', 'black': ''})
+        self.assertEqual(data['eval_level'], '1ply')
+
+    def test_reanalysis_validates_and_queues_once_without_mutating_payload(self):
+        self.authorize()
+        self.match.status = 'completed'
+        self.match.save()
+        url = f'/api/v1/internal/results/{self.match.id}/'
+        self.assertEqual(self.client.post(url, {'eval_level': 'rollout'}, format='json').status_code, 400)
+        self.assertEqual(self.client.post(url, {'eval_level': '3ply'}, format='json').status_code, 202)
+        self.match.refresh_from_db()
+        self.assertEqual(self.match.status, 'pending')
+        self.assertEqual(self.match.eval_level, '3ply')
+        self.assertEqual(self.match.input_payload, {'rules': {'target_points': 1}})
+        self.assertEqual(self.client.post(url, {'eval_level': '2ply'}, format='json').status_code, 409)
+
+    def test_reanalysis_requires_token(self):
+        response = self.client.post(f'/api/v1/internal/results/{self.match.id}/', {'eval_level': '2ply'}, format='json')
+        self.assertEqual(response.status_code, 403)
+
     def test_reads_require_service_token(self):
         self.assertEqual(self.client.get('/api/v1/internal/results/').status_code, 403)
         self.client.credentials(HTTP_AUTHORIZATION="Bearer incorrect")
