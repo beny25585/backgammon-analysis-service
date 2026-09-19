@@ -91,6 +91,13 @@ class GameAnalysis(models.Model):
     )
     win_type = models.CharField(max_length=30)
     points_awarded = models.PositiveIntegerField(default=0)
+    white_score_before = models.PositiveIntegerField(default=0)
+    black_score_before = models.PositiveIntegerField(default=0)
+
+    white_score_after = models.PositiveIntegerField(default=0)
+    black_score_after = models.PositiveIntegerField(default=0)
+
+    is_crawford = models.BooleanField(default=False)
 
     # Events belonging only to this game.
     input_events = models.JSONField(default=list)
@@ -337,4 +344,95 @@ class DecisionAnalysis(models.Model):
         return (
             f"{self.decision_type} #{self.sequence_number} "
             f"for {self.player_game_analysis_id}"
+        )
+
+
+class RollLuckAnalysis(models.Model):
+    player_game_analysis = models.ForeignKey(
+        PlayerGameAnalysis,
+        on_delete=models.CASCADE,
+        related_name="luck_rolls",
+    )
+
+    source_event_sequence = models.PositiveIntegerField()
+
+    dice = models.JSONField(
+        default=list,
+    )
+
+    is_opening_roll = models.BooleanField(
+        default=False,
+    )
+
+    luck = models.DecimalField(
+        max_digits=12,
+        decimal_places=8,
+    )
+
+    actual_equity = models.DecimalField(
+        max_digits=12,
+        decimal_places=8,
+    )
+
+    average_equity = models.DecimalField(
+        max_digits=12,
+        decimal_places=8,
+    )
+
+    ply = models.PositiveSmallIntegerField()
+
+    level_label = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+    )
+
+    position_snapshot = models.JSONField(
+        default=dict,
+    )
+
+    raw_analysis = models.JSONField(
+        default=dict,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = [
+            "source_event_sequence",
+        ]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "player_game_analysis",
+                    "source_event_sequence",
+                ],
+                name=(
+                    "unique_player_game_luck_roll"
+                ),
+            ),
+        ]
+
+        indexes = [
+            models.Index(
+                fields=[
+                    "player_game_analysis",
+                    "source_event_sequence",
+                ],
+                name="luck_player_seq_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.player_game_analysis_id} "
+            f"roll={self.source_event_sequence} "
+            f"luck={self.luck}"
         )
