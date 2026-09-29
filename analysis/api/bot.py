@@ -8,7 +8,7 @@ import math
 import secrets
 import threading
 
-from bgsage import BgBotAnalyzer
+from bgsage import BgBotAnalyzer, possible_single_die_moves
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -49,6 +49,85 @@ def match_context(state, match, color):
         jacoby=False, beaver=False, max_cube_value=limit if limit != 1 else 0)
 
 
+def _die_orders(die1, die2):
+    if die1 == die2:
+        return [[die1, die1, die1, die1]]
+    return [[die1, die2], [die2, die1]]
+
+
+def _has_any_legal_move(board, die):
+    try:
+        return len(possible_single_die_moves(list(board), die)) > 0
+    except Exception as exc:
+        raise RuntimeError(
+            "Open Sage move enumeration failed: %s" % (exc,)
+        ) from exc
+
+
+def _is_complete(current_board, remaining):
+    if remaining:
+        for unique_die in set(remaining):
+            if _has_any_legal_move(current_board, unique_die):
+                return False
+    return True
+
+
+def _resolve_selected_board_steps(
+    *,
+    start_board: list[int],
+    target_board: list[int],
+    die1: int,
+    die2: int,
+) -> list[dict]:
+    """Reconstruct Sage-native single-die steps reaching the selected board.
+
+    Uses only the public ``possible_single_die_moves`` API. A candidate is
+    complete only when the board equals the target AND no remaining die has
+    any legal move from there (or no dice remain).
+    """
+    if (
+        type(die1) is not int or type(die2) is not int
+        or not 1 <= die1 <= 6 or not 1 <= die2 <= 6
+    ):
+        raise ValueError("Invalid dice")
+    target = list(target_board)
+    for order in _die_orders(die1, die2):
+        found = _search_die_order(list(start_board), target, list(order), [])
+        if found is not None:
+            return found
+    raise RuntimeError("Could not reconstruct selected board move sequence")
+
+
+def _search_die_order(current_board, target_board, remaining, sequence):
+    if list(current_board) == list(target_board):
+        if _is_complete(current_board, remaining):
+            return sequence
+        return None
+    if not remaining:
+        return None
+    die = remaining[0]
+    try:
+        candidates = possible_single_die_moves(list(current_board), die)
+    except Exception as exc:
+        raise RuntimeError(
+            "Open Sage move enumeration failed: %s" % (exc,)
+        ) from exc
+    for step in candidates:
+        result = _search_die_order(
+            step["board"],
+            target_board,
+            remaining[1:],
+            sequence + [{
+                "from": step["from"],
+                "to": step["to"],
+                "die": die,
+            }],
+        )
+        if result is not None:
+            return result
+    return None
+
+
 def choose_board(state, difficulty, match=None, action='move'):
     """One-point practice: evaluate complete turns, with no live cube."""
     global _engine
@@ -82,7 +161,13 @@ def choose_board(state, difficulty, match=None, action='move'):
             candidates = [m for m in result.moves if selected.equity - m.equity <= limit]
             weights = [math.exp((m.equity - selected.equity) / temperature) for m in candidates]
             selected = secrets.SystemRandom().choices(candidates, weights=weights, k=1)[0]
-        return {"board": list(selected.board), "engine": "open_sage",
+        steps = _resolve_selected_board_steps(
+            start_board=board,
+            target_board=list(selected.board),
+            die1=dice[0],
+            die2=dice[1],
+        )
+        return {"board": list(selected.board), "moves": steps, "engine": "open_sage",
                 "engine_version": OPEN_SAGE_VERSION, "eval_level": str(selected.eval_level)}
     finally:
         _lock.release()
