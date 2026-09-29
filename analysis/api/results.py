@@ -18,7 +18,8 @@ from analysis.converters.game_state import game_state_to_open_sage_board
 
 class ResultsClient(BasePermission):
     def has_permission(self, request, view):
-        token = getattr(settings, "ANALYSIS_API_TOKEN", "") or os.environ.get("ANALYSIS_API_TOKEN", "")
+        token = getattr(settings, "ANALYSIS_API_TOKEN",
+                        "") or os.environ.get("ANALYSIS_API_TOKEN", "")
         supplied = request.headers.get("Authorization", "")
         return bool(token) and hmac.compare_digest(supplied.encode(), f"Bearer {token}".encode())
 
@@ -33,11 +34,21 @@ def summary(match):
         "available_eval_levels": ["1ply", "2ply", "3ply"],
         "rules": match.input_payload.get("rules", {}),
         "result": match.input_payload.get("result", {}),
-        "players": [{"color": p.color,
-                     "name": match.input_payload.get("players", {}).get(p.color, {}).get("name", ""),
-                     "pr": p.pr, "luck": p.luck,
-                     "errors": p.errors, "blunders": p.blunders,
-                     "equity_lost": p.equity_lost} for p in match.players.all()],
+        "players": [
+            {
+                "color": p.color,
+                "name": match.input_payload.get(
+                    "players", {}
+                ).get(p.color, {}).get("name", ""),
+                "game_rating": p.game_rating,
+                "pr": p.pr,
+                "luck": p.luck,
+                "errors": p.errors,
+                "blunders": p.blunders,
+                "equity_lost": p.equity_lost,
+            }
+            for p in match.players.all()
+        ],
     }
 
 
@@ -48,7 +59,8 @@ def match_results(request, analysis_id=None):
     if request.method == "POST":
         if analysis_id is None:
             return Response({"detail": "A match is required."}, status=400)
-        level = request.data.get("eval_level") if isinstance(request.data, dict) else None
+        level = request.data.get("eval_level") if isinstance(
+            request.data, dict) else None
         if level not in ("1ply", "2ply", "3ply"):
             return Response({"detail": "Choose 1ply, 2ply or 3ply."}, status=400)
         match = get_object_or_404(matches, pk=analysis_id)
@@ -72,7 +84,8 @@ def match_results(request, analysis_id=None):
     data = summary(match)
     data["games"] = []
     for game in match.games.prefetch_related("players__match_player_analysis", "players__decisions"):
-        played = {d["end_sequence"]: d for d in extract_checker_decisions(game)}
+        played = {d["end_sequence"]
+            : d for d in extract_checker_decisions(game)}
         decisions = []
         for player in game.players.all():
             color = player.match_player_analysis.color
@@ -92,14 +105,18 @@ def match_results(request, analysis_id=None):
                 }
                 extracted = played.get(decision.source_event_sequence)
                 if decision.decision_type == "checker_move" and extracted:
-                    item["played_board"] = game_state_to_open_sage_board(extracted["after_state"], player_on_roll=color)
+                    item["played_board"] = game_state_to_open_sage_board(
+                        extracted["after_state"], player_on_roll=color)
                 if decision.decision_type == "checker_move":
                     item["alternatives"] = [
-                        {**candidate, "notation": checker_move_notation(item["board"], candidate["board"], decision.dice)}
+                        {**candidate, "notation": checker_move_notation(
+                            item["board"], candidate["board"], decision.dice)}
                         for candidate in decision.alternatives
                     ]
-                    item["played_notation"] = checker_move_notation(item["board"], item["played_board"], decision.dice)
-                    item["best_notation"] = checker_move_notation(item["board"], (decision.best_action or {}).get("board"), decision.dice)
+                    item["played_notation"] = checker_move_notation(
+                        item["board"], item["played_board"], decision.dice)
+                    item["best_notation"] = checker_move_notation(
+                        item["board"], (decision.best_action or {}).get("board"), decision.dice)
                 decisions.append(item)
         data["games"].append({"number": game.game_number, "is_crawford": game.is_crawford,
                               "score": [game.white_score_before, game.black_score_before],
