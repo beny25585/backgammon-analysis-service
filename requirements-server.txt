@@ -1,2 +1,3 @@
 -r requirements.txt
+psycopg2-binary==2.9.11
 gunicorn==26.2.0
