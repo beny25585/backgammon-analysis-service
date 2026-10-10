@@ -1,10 +1,58 @@
+from unittest.mock import patch
+
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
-from analysis.models import MatchAnalysis
+from analysis.models import GameAnalysis, MatchAnalysis, PlayerGameAnalysis
 
 
 @override_settings(ANALYSIS_API_TOKEN="test-results-token")
 class ResultsAPITests(TestCase):
+    @patch("analysis.engines.open_sage.OpenSageEngine.analyze_checker_play", side_effect=AssertionError("No engine rerun"))
+    @patch("analysis.engines.open_sage.OpenSageEngine.analyze_cube_action", side_effect=AssertionError("No engine rerun"))
+    def test_legacy_labels_and_counts_are_derived_on_read_without_writes(self, cube_mock, checker_mock):
+        self.authorize()
+        player = self.match.players.create(color="white", source_player_id=7, errors=99, blunders=99)
+        game = GameAnalysis.objects.create(
+            match_analysis=self.match, source_game_id="classification", game_number=1,
+            winner="white", win_type="single",
+        )
+        player_game = PlayerGameAnalysis.objects.create(game_analysis=game, match_player_analysis=player)
+        meaningful = {"equities": {"no_double": 0.1, "double_take": 0.3, "double_pass": 1}}
+        cases = [
+            ("0", meaningful, "correct"),
+            ("0.019999", meaningful, "correct"),
+            ("0.02", meaningful, "inaccuracy"),
+            ("0.039999", meaningful, "inaccuracy"),
+            ("0.04", meaningful, "error"),
+            ("0.079999", meaningful, "error"),
+            ("0.08", meaningful, "error"),
+            ("0.080001", meaningful, "blunder"),
+            (None, meaningful, "unclassified"),
+            ("0.5", {}, "unclassified"),
+        ]
+        snapshot = {"points": [0] * 24, "bar": {"white": 0, "black": 0},
+                    "home": {"white": 15, "black": 15}}
+        for index, (loss, raw, _) in enumerate(cases, start=1):
+            player_game.decisions.create(
+                sequence_number=index, decision_type="no_double", equity_loss=loss,
+                classification="blunder" if loss is None else "unclassified",
+                raw_analysis=raw, position_snapshot=snapshot,
+            )
+        data = self.client.get(f'/api/v1/internal/results/{self.match.id}/').json()
+        self.assertEqual([d["classification"] for d in data["games"][0]["decisions"]],
+                         [expected for _, _, expected in cases])
+        self.assertEqual(data["players"][0]["errors"], 3)
+        self.assertEqual(data["players"][0]["blunders"], 1)
+        listed = self.client.get('/api/v1/internal/results/', {"room": str(self.match.source_room_id)}).json()
+        self.assertEqual(listed["matches"][0]["players"][0]["errors"], 3)
+        self.assertEqual(listed["matches"][0]["players"][0]["blunders"], 1)
+        player.refresh_from_db()
+        self.assertEqual((player.errors, player.blunders), (99, 99))
+        self.assertEqual(player_game.decisions.filter(classification="unclassified").count(), 9)
+        self.assertEqual(player_game.decisions.filter(classification="blunder").count(), 1)
+        cube_mock.assert_not_called()
+        checker_mock.assert_not_called()
+
     def setUp(self):
         self.client = APIClient()
         self.match = MatchAnalysis.objects.create(

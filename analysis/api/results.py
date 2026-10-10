@@ -12,7 +12,7 @@ from rest_framework.response import Response
 from analysis.models import MatchAnalysis
 from analysis.engines.open_sage import checker_move_notation
 from analysis.services.decision_stream import extract_checker_decisions
-from analysis.services.scoring import is_blunder
+from analysis.services.classification import classify_decision, classification_counts
 from analysis.converters.game_state import game_state_to_open_sage_board
 
 
@@ -43,8 +43,11 @@ def summary(match):
                 "game_rating": p.game_rating,
                 "pr": p.pr,
                 "luck": p.luck,
-                "errors": p.errors,
-                "blunders": p.blunders,
+                **classification_counts(
+                    decision
+                    for game in p.games.all()
+                    for decision in game.decisions.all()
+                ),
                 "equity_lost": p.equity_lost,
             }
             for p in match.players.all()
@@ -55,7 +58,7 @@ def summary(match):
 @api_view(["GET", "POST"])
 @permission_classes([ResultsClient])
 def match_results(request, analysis_id=None):
-    matches = MatchAnalysis.objects.prefetch_related("players")
+    matches = MatchAnalysis.objects.prefetch_related("players__games__decisions")
     if request.method == "POST":
         if analysis_id is None:
             return Response({"detail": "A match is required."}, status=400)
@@ -95,7 +98,7 @@ def match_results(request, analysis_id=None):
                     "id": str(decision.id), "sequence": decision.sequence_number,
                     "player": color, "type": decision.decision_type,
                     "dice": decision.dice,
-                    "classification": "blunder" if is_blunder(decision) else decision.classification,
+                    "classification": classify_decision(decision),
                     "equity_loss": decision.equity_loss,
                     "played_equity": decision.played_equity, "best_equity": decision.best_equity,
                     "played_action": decision.played_action, "best_action": decision.best_action,

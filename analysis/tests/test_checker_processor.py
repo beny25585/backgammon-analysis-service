@@ -15,6 +15,35 @@ from analysis.services.checker_processor import (
 
 
 class CheckerProcessorTests(TestCase):
+    @patch("analysis.services.checker_processor.analyze_checker_decision")
+    @patch("analysis.services.checker_processor.extract_checker_decisions")
+    def test_persists_quality_policy_and_unclassified_exclusions(self, extract_mock, analyze_mock):
+        meaningful = {"moves": [{"equity": 0.4}, {"equity": 0.1}]}
+        cases = [
+            ("0.019999", meaningful, "correct"),
+            ("0.02", meaningful, "inaccuracy"),
+            ("0.039999", meaningful, "inaccuracy"),
+            ("0.04", meaningful, "error"),
+            ("0.08", meaningful, "error"),
+            ("0.080001", meaningful, "blunder"),
+            ("0.0199999", meaningful, "inaccuracy"),
+            ("0.0800004", meaningful, "error"),
+            (None, meaningful, "unclassified"),
+            ("0.5", {"moves": [{"equity": 0.4}]}, "unclassified"),
+            ("0.5", {}, "unclassified"),
+        ]
+        extract_mock.return_value = [{} for _ in cases]
+        analyze_mock.side_effect = [
+            {"player": "white", "dice": [6, 3], "source_event_sequence": index,
+             "equity_loss": loss, "raw_analysis": raw}
+            for index, (loss, raw, _) in enumerate(cases, start=1)
+        ]
+        process_game_checker_decisions(game_analysis=self.game_analysis)
+        self.assertEqual(
+            list(self.white_game.decisions.values_list("classification", flat=True)),
+            [expected for _, _, expected in cases],
+        )
+
     def setUp(self):
         self.match_analysis = MatchAnalysis.objects.create(
             source_match_id="11111111-1111-1111-1111-111111111111",

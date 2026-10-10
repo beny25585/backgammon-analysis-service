@@ -15,6 +15,36 @@ from analysis.services.cube_processor import (
 
 
 class CubeProcessorTests(TestCase):
+    @patch("analysis.services.cube_processor.analyze_cube_decision")
+    @patch("analysis.services.cube_processor.extract_cube_decisions")
+    def test_persists_quality_policy_and_unclassified_exclusions(self, extract_mock, analyze_mock):
+        meaningful = {"equities": {"no_double": 0.1, "double_take": 0.3, "double_pass": 1}}
+        trivial = {"equities": {"no_double": 0.1, "double_take": 0.1005, "double_pass": 1}}
+        cases = [
+            ("0.019999", meaningful, "correct"),
+            ("0.02", meaningful, "inaccuracy"),
+            ("0.039999", meaningful, "inaccuracy"),
+            ("0.04", meaningful, "error"),
+            ("0.08", meaningful, "error"),
+            ("0.080001", meaningful, "blunder"),
+            ("0.0199999", meaningful, "inaccuracy"),
+            ("0.0800004", meaningful, "error"),
+            (None, meaningful, "unclassified"),
+            ("0.5", trivial, "unclassified"),
+            ("0.5", {}, "unclassified"),
+        ]
+        extract_mock.return_value = [{} for _ in cases]
+        analyze_mock.side_effect = [
+            {"player": "white", "decision_type": "no_double", "source_event_sequence": index,
+             "equity_loss": loss, "raw_analysis": raw}
+            for index, (loss, raw, _) in enumerate(cases, start=1)
+        ]
+        process_game_cube_decisions(game_analysis=self.game_analysis)
+        self.assertEqual(
+            list(self.white_game.decisions.values_list("classification", flat=True)),
+            [expected for _, _, expected in cases],
+        )
+
     def setUp(self):
         self.match_analysis = MatchAnalysis.objects.create(
             source_match_id="22222222-2222-2222-2222-222222222222",

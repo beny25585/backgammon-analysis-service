@@ -4,6 +4,7 @@ from django.db import transaction
 
 from analysis.models import DecisionAnalysis
 from analysis.services.cube_analysis import analyze_cube_decision
+from analysis.services.classification import classify_decision
 from analysis.services.decision_stream import extract_cube_decisions
 
 
@@ -119,7 +120,7 @@ def process_game_cube_decisions(
                 "source_event_sequence."
             )
 
-        persisted = DecisionAnalysis.objects.create(
+        persisted = DecisionAnalysis(
             player_game_analysis=player_game_analysis,
 
             sequence_number=int(source_sequence),
@@ -152,9 +153,6 @@ def process_game_cube_decisions(
                 analysis.get("equity_loss")
             ),
 
-            classification=(
-                DecisionAnalysis.Classification.UNCLASSIFIED
-            ),
 
             position_snapshot=(
                 analysis.get("position_snapshot")
@@ -167,6 +165,11 @@ def process_game_cube_decisions(
             ),
         )
 
+        # Classify the six-decimal loss that the model will actually store.
+        if persisted.equity_loss is not None and persisted.equity_loss.is_finite():
+            persisted.equity_loss = persisted.equity_loss.quantize(Decimal("0.000001"))
+        persisted.classification = classify_decision(persisted)
+        persisted.save()
         created.append(persisted)
 
     return created

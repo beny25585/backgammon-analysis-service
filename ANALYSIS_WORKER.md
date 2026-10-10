@@ -1,5 +1,52 @@
 # Analysis worker
 
+## Approved decision classification (09.10.2026)
+
+The application now uses one shared classification policy in
+`analysis/services/classification.py`. This is an approved application policy,
+not a severity scale attributed to Open Sage:
+
+| Saved equity loss | Label |
+| --- | --- |
+| `< 0.02` | `correct` |
+| `>= 0.02` and `< 0.04` | `inaccuracy` |
+| `>= 0.04` and `<= 0.08` | `error` |
+| `> 0.08` | `blunder` (existing strict boundary retained) |
+
+Only decisions scoreable under the existing checker/cube rules with a finite,
+present saved `equity_loss` receive these labels. Missing/nonfinite loss, forced
+or trivial decisions, unsupported types and incomplete scoreability data remain
+`unclassified`; missing loss is never treated as zero. Checker/cube processors
+classify before insertion using the model's six-decimal stored loss precision.
+
+Game and match summaries count `error` and `blunder` as disjoint categories;
+inaccuracies are not errors and blunders are not counted twice. PR, equity-loss
+aggregation and the analyzed-decision denominator remain unchanged: only
+scoreable decisions with non-null loss enter the existing scoring calculations.
+Empty summaries have zero error/blunder counts.
+
+Results GETs derive both decision labels and player error/blunder counts from
+saved decision metrics (including legacy rows with stale labels/counts), using
+prefetched player/game/decision relationships. They do not rerun the engine,
+update saved labels/counts, backfill the database or modify saved PR/luck/rating.
+Reading a list now also fetches its saved decisions to keep counts consistent.
+No schema migration is required. Other readers of persisted legacy summaries
+still see their saved counts until ordinary reprocessing updates them.
+
+Regression coverage was added for exact boundaries, missing/nonfinite metrics,
+unscoreable decisions, both processors, game/match counts and read-only legacy
+API classification. AST parsing and in-memory Python compilation passed for
+all 11 changed/new Python files; no application modules were executed. Tests,
+build and live match verification have **not** been run by the assistant. No
+database operation, migration, engine run, commit or deployment was performed.
+The user can run:
+
+```sh
+python manage.py test analysis.tests.test_classification analysis.tests.test_scoring analysis.tests.test_checker_processor analysis.tests.test_cube_processor analysis.tests.test_player_summary analysis.tests.test_player_match_summary analysis.tests.test_results_api
+```
+
+## Worker operation
+
 > **עדכון תיעוד 19.09.2026 — נוהל מתוחזק.** העובד והתמיכה ב־1ply/2ply/3ply תואמים לקוד. שירות זה מספק גם bot/move עבור AI, עם match ו־action=move|cube; רמת הבוט היא 1ply בנפרד מעומק ניתוח המשחק. requirements.txt נועל Django 6.1.1 ואת commit חבילת bgsage; אין להסיק שהחבילות הותקנו או שהעובד פועל.
 >
 > [מצב המערכת העדכני](<../CURRENT_STATE.he.md>) · [מפתח התיעוד](<../docs/README.md>). עדכון זה מבוסס על קוד מקומי; בדיקות וספירות בגוף המסמך נשארות מתוארכות למועד ביצוען.

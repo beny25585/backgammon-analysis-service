@@ -3,9 +3,9 @@ from decimal import Decimal
 from django.db import transaction
 
 from analysis.models import DecisionAnalysis
+from analysis.services.classification import classification_counts
 from analysis.services.scoring import (
     calculate_pr,
-    is_blunder,
     is_scoreable_decision,
 )
 
@@ -82,27 +82,21 @@ def update_player_game_summary(player_game_analysis):
         _sum_equity_loss(decisions)
     )
 
-    player_game_analysis.checker_blunders = sum(
-        1
-        for decision in scoreable_checker
-        if is_blunder(decision)
-    )
-
-    player_game_analysis.cube_blunders = sum(
-        1
-        for decision in scoreable_cube
-        if is_blunder(decision)
-    )
+    checker_counts = classification_counts(checker)
+    cube_counts = classification_counts(cube)
+    player_game_analysis.checker_blunders = checker_counts["blunders"]
+    player_game_analysis.cube_blunders = cube_counts["blunders"]
 
     player_game_analysis.blunders = (
         player_game_analysis.checker_blunders
         + player_game_analysis.cube_blunders
     )
 
-    # Do not invent an Error threshold yet.
-    player_game_analysis.checker_errors = None
-    player_game_analysis.cube_errors = None
-    player_game_analysis.errors = None
+    player_game_analysis.checker_errors = checker_counts["errors"]
+    player_game_analysis.cube_errors = cube_counts["errors"]
+    player_game_analysis.errors = (
+        player_game_analysis.checker_errors + player_game_analysis.cube_errors
+    )
 
     player_game_analysis.save(
         update_fields=[
@@ -137,6 +131,9 @@ def update_player_game_summary(player_game_analysis):
             player_game_analysis.cube_blunders
         ),
         "blunders": player_game_analysis.blunders,
+        "checker_errors": player_game_analysis.checker_errors,
+        "cube_errors": player_game_analysis.cube_errors,
+        "errors": player_game_analysis.errors,
     }
 
 
@@ -204,17 +201,10 @@ def update_player_match_summary(player_match_analysis):
         _sum_equity_loss(cube)
     )
 
-    player_match_analysis.checker_blunders = sum(
-        1
-        for decision in scoreable_checker
-        if is_blunder(decision)
-    )
-
-    player_match_analysis.cube_blunders = sum(
-        1
-        for decision in scoreable_cube
-        if is_blunder(decision)
-    )
+    checker_counts = classification_counts(checker)
+    cube_counts = classification_counts(cube)
+    player_match_analysis.checker_blunders = checker_counts["blunders"]
+    player_match_analysis.cube_blunders = cube_counts["blunders"]
 
     player_match_analysis.blunders = (
         player_match_analysis.checker_blunders
@@ -225,10 +215,11 @@ def update_player_match_summary(player_match_analysis):
         len(scoreable_all)
     )
 
-    # No official Error threshold yet.
-    player_match_analysis.checker_errors = None
-    player_match_analysis.cube_errors = None
-    player_match_analysis.errors = None
+    player_match_analysis.checker_errors = checker_counts["errors"]
+    player_match_analysis.cube_errors = cube_counts["errors"]
+    player_match_analysis.errors = (
+        player_match_analysis.checker_errors + player_match_analysis.cube_errors
+    )
 
     player_match_analysis.save(
         update_fields=[
@@ -285,4 +276,7 @@ def update_player_match_summary(player_match_analysis):
         "blunders": (
             player_match_analysis.blunders
         ),
+        "checker_errors": player_match_analysis.checker_errors,
+        "cube_errors": player_match_analysis.cube_errors,
+        "errors": player_match_analysis.errors,
     }

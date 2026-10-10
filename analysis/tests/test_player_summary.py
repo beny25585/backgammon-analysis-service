@@ -15,6 +15,23 @@ from analysis.services.player_summary import (
 
 
 class PlayerSummaryTests(TestCase):
+    def test_error_boundaries_preserve_scoreable_denominator(self):
+        for sequence, loss in enumerate((0, 0.02, 0.04, 0.08, 0.080001), start=1):
+            self._checker_decision(sequence=sequence, equity_loss=loss)
+            self._cube_decision(sequence=sequence + 10, equity_loss=loss)
+        missing = self._checker_decision(sequence=30, equity_loss=0.5)
+        missing.equity_loss = None
+        missing.save(update_fields=["equity_loss"])
+        self._checker_decision(sequence=31, equity_loss=0.5, best=0.3, second=0.2995)
+        result = update_player_game_summary(self.white_game)
+        self.white_game.refresh_from_db()
+        self.assertEqual((self.white_game.checker_errors, self.white_game.cube_errors), (2, 2))
+        self.assertEqual((self.white_game.errors, self.white_game.blunders), (4, 2))
+        self.assertEqual(result["decisions_analyzed"], 10)
+        self.assertEqual(result["errors"], 4)
+        self.assertEqual(result["checker_decisions"], 5)
+        self.assertEqual(result["cube_decisions"], 5)
+
     def setUp(self):
         self.match_analysis = MatchAnalysis.objects.create(
             source_match_id="55555555-5555-5555-5555-555555555555",
@@ -172,16 +189,19 @@ class PlayerSummaryTests(TestCase):
             1,
         )
 
-        self.assertIsNone(
+        self.assertEqual(
             self.white_game.checker_errors,
+            1,
         )
 
-        self.assertIsNone(
+        self.assertEqual(
             self.white_game.cube_errors,
+            1,
         )
 
-        self.assertIsNone(
+        self.assertEqual(
             self.white_game.errors,
+            2,
         )
 
         self.assertEqual(
