@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *.sqlite3
 .env
+.env.*
+!.env.example
+!**/.env.example
 .vscode/
 .idea/
 .engine-build/
