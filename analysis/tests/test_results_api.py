@@ -106,7 +106,7 @@ class ResultsAPITests(TestCase):
     def test_room_filter_and_safe_response(self):
         self.authorize()
         url = '/api/v1/internal/results/'
-        self.assertEqual(self.client.get(url).json(), {"matches": []})
+        self.assertEqual(self.client.get(url).json(), {"matches": [], "count": 0, "next_offset": None})
         data = self.client.get(url, {"room": str(self.match.source_room_id)}).json()
         self.assertEqual(len(data['matches']), 1)
         self.assertNotIn('input_payload', data['matches'][0])
@@ -118,3 +118,72 @@ class ResultsAPITests(TestCase):
         self.assertEqual(data['status'], 'pending')
         self.assertEqual(data['games'], [])
         self.assertEqual(self.client.get('/api/v1/internal/results/99999999-9999-9999-9999-999999999999/').status_code, 404)
+
+    def test_five_item_pages_include_every_authorized_match_once(self):
+        import uuid
+        self.authorize()
+        for _ in range(11):
+            MatchAnalysis.objects.create(
+                source_match_id=uuid.uuid4(), source_room_id=self.match.source_room_id,
+                source_type="quick", input_payload={"rules": {"target_points": 3}},
+            )
+        MatchAnalysis.objects.create(
+            source_match_id=uuid.uuid4(), source_room_id=uuid.uuid4(),
+            source_type="quick", input_payload={},
+        )
+        url = '/api/v1/internal/results/'
+        pages = [self.client.get(url, {
+            "room": str(self.match.source_room_id), "limit": 5, "offset": offset,
+        }).json() for offset in (0, 5, 10)]
+        self.assertEqual([len(page["matches"]) for page in pages], [5, 5, 2])
+        self.assertEqual([page["count"] for page in pages], [12, 12, 12])
+        self.assertEqual([page["next_offset"] for page in pages], [5, 10, None])
+        ids = [row["id"] for page in pages for row in page["matches"]]
+        expected = [str(pk) for pk in MatchAnalysis.objects.filter(
+            source_room_id=self.match.source_room_id,
+        ).order_by("-created_at", "-id").values_list("id", flat=True)]
+        self.assertEqual(ids, expected)
+        self.assertEqual(len(set(ids)), 12)
+        staff = self.client.get(url, {"staff": "1", "limit": 5}).json()
+        self.assertEqual(staff["count"], 13)
+        self.assertEqual(len(staff["matches"]), 5)
+
+    def test_invalid_page_arguments_are_rejected(self):
+        self.authorize()
+        for params in ({"limit": 200}, {"offset": -1}, {"offset": "invalid"}):
+            self.assertEqual(self.client.get('/api/v1/internal/results/', params).status_code, 400)
+
+    def test_summary_page_does_not_materialize_full_history(self):
+        from analysis.api.result_pages import summary_page
+        self.authorize()
+        self.match.input_payload = {
+            "rules": {"target_points": 5}, "result": {"white_score": 5},
+            "players": {"white": {"name": "Player"}},
+            "games": [{"events": [{"private_history": "large" * 1000}]}],
+        }
+        self.match.raw_response = {"engine_debug": "large" * 1000}
+        self.match.save()
+        page, _, count, next_offset = summary_page([str(self.match.source_room_id)])
+        self.assertEqual(count, 1)
+        self.assertIsNone(next_offset)
+        self.assertTrue({"input_payload", "raw_response"}.issubset(page[0].get_deferred_fields()))
+        self.assertNotIn("games", page[0].summary_payload)
+        self.assertEqual(page[0].summary_payload["rules"], {"target_points": 5})
+
+    def test_false_beaver_does_not_turn_a_trivial_take_into_a_blunder(self):
+        self.authorize()
+        player = self.match.players.create(color="white", source_player_id=7)
+        game = GameAnalysis.objects.create(
+            match_analysis=self.match, source_game_id="trivial-take", game_number=1,
+            winner="white", win_type="single",
+        )
+        player_game = PlayerGameAnalysis.objects.create(game_analysis=game, match_player_analysis=player)
+        player_game.decisions.create(
+            sequence_number=1, decision_type="take", equity_loss="0.5",
+            raw_analysis={"is_beaver": False, "equities": {
+                "no_double": 0.1, "double_take": 0.3, "double_pass": 0.3,
+            }},
+        )
+        data = self.client.get('/api/v1/internal/results/', {"room": str(self.match.source_room_id)}).json()
+        self.assertEqual(data["matches"][0]["players"][0]["errors"], 0)
+        self.assertEqual(data["matches"][0]["players"][0]["blunders"], 0)

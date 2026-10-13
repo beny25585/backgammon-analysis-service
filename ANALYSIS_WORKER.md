@@ -26,10 +26,16 @@ scoreable decisions with non-null loss enter the existing scoring calculations.
 Empty summaries have zero error/blunder counts.
 
 Results GETs derive both decision labels and player error/blunder counts from
-saved decision metrics (including legacy rows with stale labels/counts), using
-prefetched player/game/decision relationships. They do not rerun the engine,
+saved decision metrics (including legacy rows with stale labels/counts). Detail
+reads use prefetched player/game/decision relationships. Lists return five
+authorized summaries per request, projecting only summary payload fields and
+streaming potentially counted decisions in batches of 25 with only their
+scoring inputs. They do not rerun the engine,
 update saved labels/counts, backfill the database or modify saved PR/luck/rating.
-Reading a list now also fetches its saved decisions to keep counts consistent.
+Lists do not materialize all game/decision relationships or full input/raw JSON.
+The response includes count and next_offset; authorized filtering happens before
+counting/slicing, with a stable creation-date/UUID order. Runtime verification
+and coordinated deployment with the tournament bridge/client remain pending.
 No schema migration is required. Other readers of persisted legacy summaries
 still see their saved counts until ordinary reprocessing updates them.
 

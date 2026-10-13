@@ -10,6 +10,7 @@ from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 
 from analysis.models import MatchAnalysis
+from analysis.api.result_pages import page_offset, summary_page
 from analysis.engines.open_sage import checker_move_notation
 from analysis.services.decision_stream import extract_checker_decisions
 from analysis.services.classification import classify_decision, classification_counts
@@ -24,7 +25,8 @@ class ResultsClient(BasePermission):
         return bool(token) and hmac.compare_digest(supplied.encode(), f"Bearer {token}".encode())
 
 
-def summary(match):
+def summary(match, *, payload=None, player_counts=None):
+    payload = match.input_payload if payload is None else payload
     return {
         "id": str(match.id), "status": match.status,
         "room_id": str(match.source_room_id) if match.source_room_id else None,
@@ -32,21 +34,22 @@ def summary(match):
         "engine": match.engine, "engine_version": match.engine_version,
         "eval_level": match.eval_level,
         "available_eval_levels": ["1ply", "2ply", "3ply"],
-        "rules": match.input_payload.get("rules", {}),
-        "result": match.input_payload.get("result", {}),
+        "rules": payload.get("rules") or {},
+        "result": payload.get("result") or {},
         "players": [
             {
                 "color": p.color,
-                "name": match.input_payload.get(
-                    "players", {}
-                ).get(p.color, {}).get("name", ""),
+                "name": (payload.get("players") or {}).get(p.color, {}).get("name", ""),
                 "game_rating": p.game_rating,
                 "pr": p.pr,
                 "luck": p.luck,
-                **classification_counts(
-                    decision
-                    for game in p.games.all()
-                    for decision in game.decisions.all()
+                **(
+                    player_counts[p.id] if player_counts is not None
+                    else classification_counts(
+                        decision
+                        for game in p.games.all()
+                        for decision in game.decisions.all()
+                    )
                 ),
                 "equity_lost": p.equity_lost,
             }
@@ -58,7 +61,7 @@ def summary(match):
 @api_view(["GET", "POST"])
 @permission_classes([ResultsClient])
 def match_results(request, analysis_id=None):
-    matches = MatchAnalysis.objects.prefetch_related("players__games__decisions")
+    matches = MatchAnalysis.objects.defer("raw_response").prefetch_related("players__games__decisions")
     if request.method == "POST":
         if analysis_id is None:
             return Response({"detail": "A match is required."}, status=400)
@@ -78,10 +81,18 @@ def match_results(request, analysis_id=None):
         return Response(summary(match), status=202)
     if analysis_id is None:
         # The trusted caller supplies only rooms authorized for its session.
-        if request.query_params.get("staff") != "1":
-            rooms = request.query_params.getlist("room")
-            matches = matches.filter(source_room_id__in=rooms)
-        return Response({"matches": [summary(m) for m in matches[:200]]})
+        try:
+            offset = page_offset(request.query_params)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        page, counts, count, next_offset = summary_page(
+            request.query_params.getlist("room"),
+            staff=request.query_params.get("staff") == "1", offset=offset,
+        )
+        return Response({
+            "matches": [summary(m, payload=m.summary_payload, player_counts=counts) for m in page],
+            "count": count, "next_offset": next_offset,
+        })
 
     match = get_object_or_404(matches, pk=analysis_id)
     data = summary(match)
