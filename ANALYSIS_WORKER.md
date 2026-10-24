@@ -59,6 +59,20 @@ python manage.py test analysis.tests.test_classification analysis.tests.test_sco
 
 Install dependencies and the CPU-appropriate engine before applying the schema:
 
+PostgreSQL is required locally and on the server. Configure `DB_NAME`, `DB_USER`
+and `DB_PASSWORD` in this service's private `.env` or process environment;
+`DB_HOST` defaults to `127.0.0.1` and `DB_PORT` to `5432` for native local use.
+`.env.example` contains the non-secret template. Docker keeps the same explicit
+`DB_*` profile and also requires `DB_HOST`. Both the API and `process_analyses`
+must use the same database. `DATABASE_URL` is not a replacement for `DB_*` here;
+SQLite and other non-PostgreSQL URLs are rejected rather than ignored.
+
+The PostgreSQL driver is in base `requirements.txt`, so local and server installs
+both receive it. No SQLite file is opened or created by these settings. Existing
+legacy-data import, database provisioning and cutover require their own operation;
+switching settings does not transfer or erase data. Run checks/tests against an
+explicit disposable PostgreSQL database with a test login allowed to create it.
+
 ```sh
 .venv/bin/python -m pip install -r requirements-server.txt
 .venv/bin/python scripts/install_open_sage.py

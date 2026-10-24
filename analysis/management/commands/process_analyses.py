@@ -3,9 +3,12 @@ import time
 
 from django.core.management.base import BaseCommand
 from django.db import close_old_connections
+from django.db.models import Q
 
 from analysis.models import MatchAnalysis
 from analysis.services.match_processor import process_match_analysis, MatchProcessingError
+from analysis.services.processing_lease import expired_processing
+from analysis.api.result_scopes import cleanup_expired_scopes
 
 
 class Command(BaseCommand):
@@ -15,9 +18,15 @@ class Command(BaseCommand):
         parser.add_argument("--once", action="store_true")
 
     def handle(self, *args, **options):
+        cleanup_at = 0
         while True:
             close_old_connections()
-            match = MatchAnalysis.objects.filter(status="pending").order_by("updated_at").first()
+            if time.monotonic() >= cleanup_at:
+                cleanup_expired_scopes()
+                cleanup_at = time.monotonic() + 60
+            match = MatchAnalysis.objects.filter(
+                Q(status="pending") | expired_processing(),
+            ).order_by("updated_at").first()
             if match is None:
                 if options["once"]:
                     return

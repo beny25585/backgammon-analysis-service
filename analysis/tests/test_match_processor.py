@@ -26,6 +26,7 @@ class MatchProcessorTests(TestCase):
         self.assertEqual(self.match_analysis.status, 'failed')
 
     def setUp(self):
+        self.enterContext(patch("analysis.services.match_processor.ProcessingHeartbeat"))
         self.match_analysis = MatchAnalysis.objects.create(
             source_match_id="44444444-4444-4444-4444-444444444444",
             source_type=MatchAnalysis.SourceType.PRIVATE,
@@ -187,11 +188,14 @@ class MatchProcessorTests(TestCase):
         )
 
     def test_already_processing_rejected(self):
+        from datetime import timedelta
+        from django.utils import timezone
         self.match_analysis.status = (
             MatchAnalysis.Status.PROCESSING
         )
+        self.match_analysis.lease_expires_at = timezone.now() + timedelta(minutes=5)
         self.match_analysis.save(
-            update_fields=["status"]
+            update_fields=["status", "lease_expires_at"]
         )
 
         with self.assertRaises(

@@ -51,11 +51,17 @@ def _alternatives(value):
     return []
 
 
+def prepare_game_cube_decisions(*, game_analysis, engine):
+    return [analyze_cube_decision(game_analysis=game_analysis, decision=decision, engine=engine)
+            for decision in extract_cube_decisions(game_analysis)]
+
+
 @transaction.atomic
 def process_game_cube_decisions(
     *,
     game_analysis,
     engine=None,
+    prepared=None,
 ):
     player_game_analyses = {
         player_game.match_player_analysis.color: player_game
@@ -74,8 +80,8 @@ def process_game_cube_decisions(
             "Game is missing black PlayerGameAnalysis."
         )
 
-    extracted_decisions = extract_cube_decisions(
-        game_analysis
+    analyses = prepared if prepared is not None else prepare_game_cube_decisions(
+        game_analysis=game_analysis, engine=engine,
     )
 
     # Re-processing must replace only cube decisions.
@@ -92,13 +98,7 @@ def process_game_cube_decisions(
 
     created = []
 
-    for decision in extracted_decisions:
-        analysis = analyze_cube_decision(
-            game_analysis=game_analysis,
-            decision=decision,
-            engine=engine,
-        )
-
+    for analysis in analyses:
         player = analysis["player"]
 
         try:

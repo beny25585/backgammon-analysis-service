@@ -18,11 +18,18 @@ def _decimal(value):
     return Decimal(str(value))
 
 
+def prepare_game_checker_decisions(*, game_analysis, engine):
+    """Evaluate immutable source decisions without opening a write transaction."""
+    return [analyze_checker_decision(game_analysis=game_analysis, decision=decision, engine=engine)
+            for decision in extract_checker_decisions(game_analysis)]
+
+
 @transaction.atomic
 def process_game_checker_decisions(
     *,
     game_analysis,
     engine=None,
+    prepared=None,
 ):
     """
     Extract, analyze and persist all checker-play decisions for one game.
@@ -49,7 +56,9 @@ def process_game_checker_decisions(
             "Game is missing black PlayerGameAnalysis."
         )
 
-    extracted_decisions = extract_checker_decisions(game_analysis)
+    analyses = prepared if prepared is not None else prepare_game_checker_decisions(
+        game_analysis=game_analysis, engine=engine,
+    )
 
     # Re-processing the same game must not create duplicate checker decisions.
     DecisionAnalysis.objects.filter(
@@ -59,13 +68,7 @@ def process_game_checker_decisions(
 
     created = []
 
-    for decision in extracted_decisions:
-        analysis = analyze_checker_decision(
-            game_analysis=game_analysis,
-            decision=decision,
-            engine=engine,
-        )
-
+    for analysis in analyses:
         player = analysis["player"]
 
         try:

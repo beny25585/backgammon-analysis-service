@@ -15,6 +15,8 @@ from analysis.engines.open_sage import checker_move_notation
 from analysis.services.decision_stream import extract_checker_decisions
 from analysis.services.classification import classify_decision, classification_counts
 from analysis.converters.game_state import game_state_to_open_sage_board
+from django.db.models import Q
+from analysis.services.processing_lease import expired_processing
 
 
 class ResultsClient(BasePermission):
@@ -71,23 +73,31 @@ def match_results(request, analysis_id=None):
             return Response({"detail": "Choose 1ply, 2ply or 3ply."}, status=400)
         match = get_object_or_404(matches, pk=analysis_id)
         # Conditional update prevents requeueing an active job or a double click.
-        changed = MatchAnalysis.objects.filter(pk=match.pk).exclude(
-            status__in=["pending", "processing"]
+        changed = MatchAnalysis.objects.filter(pk=match.pk).filter(
+            ~Q(status__in=["pending", "processing"]) | expired_processing(),
         ).update(status="pending", eval_level=level, updated_at=timezone.now(),
-                 error_message="", completed_at=None, failed_at=None)
+                 error_message="", completed_at=None, failed_at=None,
+                 processing_token=None, lease_expires_at=None)
         if not changed:
             return Response({"detail": "Analysis is already queued or processing."}, status=409)
         match.refresh_from_db()
         return Response(summary(match), status=202)
     if analysis_id is None:
-        # The trusted caller supplies only rooms authorized for its session.
+        # Small direct filters remain compatible. Large histories use a
+        # finalized request-bound scope, joined before count/order/pagination.
+        from analysis.api.result_scopes import authorized_scope_rooms, DIRECT_ROOM_LIMIT
         try:
             offset = page_offset(request.query_params)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
+        rooms = request.query_params.getlist("room")
+        scope_id = request.query_params.get("scope")
+        if len(rooms) > DIRECT_ROOM_LIMIT or (scope_id and rooms):
+            return Response({"detail": "Use an access scope for large room filters."}, status=400)
+        if scope_id:
+            rooms = authorized_scope_rooms(request, scope_id)
         page, counts, count, next_offset = summary_page(
-            request.query_params.getlist("room"),
-            staff=request.query_params.get("staff") == "1", offset=offset,
+            rooms, staff=not scope_id and request.query_params.get("staff") == "1", offset=offset,
         )
         return Response({
             "matches": [summary(m, payload=m.summary_payload, player_counts=counts) for m in page],

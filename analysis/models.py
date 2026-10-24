@@ -61,6 +61,11 @@ class MatchAnalysis(models.Model):
     failed_at = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(blank=True, default="")
 
+    # Durable ownership survives worker death. A replacement changes the token;
+    # the old worker must then roll back all of its derived writes.
+    processing_token = models.UUIDField(null=True, blank=True, editable=False)
+    lease_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -69,6 +74,27 @@ class MatchAnalysis(models.Model):
 
     def __str__(self):
         return f"Analysis {self.source_match_id} ({self.status})"
+
+
+class ResultAccessScope(models.Model):
+    """Short-lived room authorization snapshot supplied by the trusted club."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    binding = models.CharField(max_length=64)
+    expected_count = models.PositiveIntegerField()
+    received_count = models.PositiveIntegerField(default=0)
+    finalized_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(db_index=True)
+
+
+class ResultAccessRoom(models.Model):
+    scope = models.ForeignKey(ResultAccessScope, on_delete=models.CASCADE, related_name="rooms")
+    room_id = models.UUIDField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("scope", "room_id"), name="unique_result_scope_room"),
+        ]
 
 
 class GameAnalysis(models.Model):

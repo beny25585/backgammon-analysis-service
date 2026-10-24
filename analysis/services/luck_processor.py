@@ -23,13 +23,19 @@ def _decimal(value):
     return Decimal(str(value))
 
 
+def prepare_game_luck(*, game_analysis, engine):
+    return [analyze_roll_luck(game_analysis=game_analysis, roll=roll, engine=engine)
+            for roll in extract_luck_rolls(game_analysis)]
+
+
 @transaction.atomic
 def process_game_luck(
     *,
     game_analysis,
     engine=None,
+    prepared=None,
 ):
-    if engine is None:
+    if engine is None and prepared is None:
         engine = OpenSageEngine()
 
     player_games = {
@@ -55,8 +61,8 @@ def process_game_luck(
             "Missing black PlayerGameAnalysis."
         )
 
-    rolls = extract_luck_rolls(
-        game_analysis
+    analyses = prepared if prepared is not None else prepare_game_luck(
+        game_analysis=game_analysis, engine=engine,
     )
 
     # Reprocessing must not duplicate roll records.
@@ -78,13 +84,7 @@ def process_game_luck(
         "black": 0,
     }
 
-    for roll in rolls:
-        analysis = analyze_roll_luck(
-            game_analysis=game_analysis,
-            roll=roll,
-            engine=engine,
-        )
-
+    for analysis in analyses:
         player = analysis["player"]
 
         if player not in player_games:

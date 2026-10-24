@@ -20,8 +20,11 @@ from analysis.api.views import health, receive_match
 from analysis.api.results import match_results
 from analysis.api.bot import bot_move
 from analysis.api.performance import player_performance
+from analysis.api.result_scopes import result_scope
 
 urlpatterns = [
+    path("api/v1/internal/results/scopes/", result_scope, name="analysis-scope-create"),
+    path("api/v1/internal/results/scopes/<uuid:scope_id>/", result_scope, name="analysis-scope"),
     path("api/v1/internal/performance/", player_performance, name="player-performance"),
     path("api/v1/internal/bot/move/", bot_move, name="bot-move"),
     path("api/v1/internal/results/", match_results, name="analysis-results"),
