@@ -18,6 +18,7 @@ from django.contrib import admin
 from django.urls import path
 from analysis.api.views import health, receive_match
 from analysis.api.results import match_results
+from analysis.api.match_record import match_record
 from analysis.api.bot import bot_move
 from analysis.api.performance import player_performance
 from analysis.api.result_scopes import result_scope
@@ -29,6 +30,7 @@ urlpatterns = [
     path("api/v1/internal/bot/move/", bot_move, name="bot-move"),
     path("api/v1/internal/results/", match_results, name="analysis-results"),
     path("api/v1/internal/results/<uuid:analysis_id>/", match_results, name="analysis-result"),
+    path("api/v1/internal/results/<uuid:analysis_id>/record/", match_record, name="analysis-record"),
     path('admin/', admin.site.urls),
     # Analysis API
     path("api/v1/health/", health, name="health"),
