@@ -19,6 +19,15 @@ def extract_checker_decisions(game_analysis):
         event_type = event.get("event_type")
         payload = event.get("payload") or {}
 
+        if event_type == "blocked_pass":
+            # No dice were requested and no checker decision was available.
+            # Keep an already completed preceding turn, but never reuse its
+            # dice or attribute an interrupted partial turn to this pass.
+            if current is not None and _has_exhausted_dice(current):
+                decisions.append(current)
+            current = None
+            continue
+
         # Normal turn: dice have just been rolled and the player can move.
         starts_normal_turn = (
             event_type == "roll"
